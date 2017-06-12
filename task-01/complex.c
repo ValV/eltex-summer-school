@@ -3,6 +3,7 @@
 #include <complex.h>
 
 float complex cx1 = 0 + 0 * I, cx2 = 0 + 0 * I; // complex numbers
+double complex cx = 0 + 0 * I; // complex result number
 
 void read_numbers() {
     float fx1r = 0, fx1i = 0, fx2r = 0, fx2i = 0; // temporary floats
@@ -21,25 +22,34 @@ int main(int argc, char *argv[]) {
     int opcode = 0;
     read_numbers(); // prompt for input
     do {
+        // display numbers
         printf("\nChoose operation for complex numbers: %g%+gi and %g%+gi:\n",
                 creal(cx1), cimag(cx1), creal(cx2), cimag(cx2));
-        printf("%6d: change numbers\t %6d: exit program\n", 0, -1);
-        printf("%6d: addition (+)\t %6d: division (/)\n", 1, 4);
-        printf("%6d: subtraction (-)\t %6d: multiplication (*)\n", 2, 3);
+        // display menu
+        printf("\t%4d: change numbers\t %4d: exit program\n\n", 0, -1);
+        printf("\t%4d: addition (+)\t %4d: multiplication (*)\n", 1, 3);
+        printf("\t%4d: subtraction (-)\t %4d: division (/)\n", 2, 4);
         scanf("%d", &opcode);
+        // process menu entry
         switch (opcode) {
             case 0:
                 read_numbers(); break;
             case 1:
-                printf("Addition...\n"); break;
+                printf("\nAddition:\n");
+                cx = cx1 + cx2;
+                printf("\t(%g%+gi)+(%g%+gi) = (%g%+g)+(%g%+g)i = %g%+gi\n\n",
+                        creal(cx1), cimag(cx1), creal(cx2), cimag(cx2),
+                        creal(cx1), creal(cx2), cimag(cx1), cimag(cx2),
+                        creal(cx), cimag(cx));
+		break;
             case 2:
-                printf("Subtraction...\n"); break;
+                printf("\nSubtraction...\n"); break;
             case 3:
-                printf("Multiplication...\n"); break;
+                printf("\nMultiplication...\n"); break;
             case 4:
-                printf("Division...\n"); break;
+                printf("\nDivision...\n"); break;
             case -1:
-                printf("Exit...\n"); break;
+                printf("\nExit...\n"); break;
             default:
                 printf("Unknown operation number!\n");
         }
