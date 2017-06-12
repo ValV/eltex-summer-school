@@ -43,7 +43,13 @@ int main(int argc, char *argv[]) {
                         creal(cx), cimag(cx));
 		break;
             case 2:
-                printf("\nSubtraction...\n"); break;
+                printf("\nSubtraction:\n");
+                cx = cx1 - cx2;
+                printf("\t(%g%+gi)-(%g%+gi) = (%g%+g)+(%g%+g)i = %g%+gi\n\n",
+                        creal(cx1), cimag(cx1), creal(cx2), cimag(cx2),
+                        creal(cx1), -creal(cx2), cimag(cx1), -cimag(cx2),
+                        creal(cx), cimag(cx));
+		break;
             case 3:
                 printf("\nMultiplication...\n"); break;
             case 4:
