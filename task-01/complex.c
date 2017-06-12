@@ -51,7 +51,15 @@ int main(int argc, char *argv[]) {
                         creal(cx), cimag(cx));
 		break;
             case 3:
-                printf("\nMultiplication...\n"); break;
+                printf("\nMultiplication:\n");
+                cx = cx1 * cx2;
+                printf("\t(%g%+gi)*(%g%+gi) = ",
+                        creal(cx1), cimag(cx1), creal(cx2), cimag(cx2));
+                printf("((%g*%g)-(%g*%g))+((%g*%g)+(%g*%g))i = ",
+                        creal(cx1), creal(cx2), cimag(cx1), cimag(cx2),
+                        cimag(cx1), creal(cx2), creal(cx1), cimag(cx2));
+                printf("%g%+gi\n\n", creal(cx), cimag(cx));
+		break;
             case 4:
                 printf("\nDivision...\n"); break;
             case -1:
