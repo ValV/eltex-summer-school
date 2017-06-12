@@ -61,11 +61,22 @@ int main(int argc, char *argv[]) {
                 printf("%g%+gi\n\n", creal(cx), cimag(cx));
 		break;
             case 4:
-                printf("\nDivision...\n"); break;
+                printf("\nDivision:\n");
+                cx = cx1 / cx2;
+                printf("\t(%g%+gi)/(%g%+gi) = ",
+                        creal(cx1), cimag(cx1), creal(cx2), cimag(cx2));
+                printf("(((%g*%g)+(%g*%g))/((%g*%g)+(%g*%g)))+\n",
+                        creal(cx1), creal(cx2), cimag(cx1), cimag(cx2),
+                        creal(cx2), creal(cx2), cimag(cx2), cimag(cx2));
+                printf("\t+(((%g*%g)-(%g*%g))/((%g*%g)+(%g*%g)))i = ",
+                        cimag(cx1), creal(cx2), creal(cx1), cimag(cx2),
+                        creal(cx2), creal(cx2), cimag(cx2), cimag(cx2));
+                printf("%g%+gi\n\n", creal(cx), cimag(cx));
+		break;
             case -1:
                 printf("\nExit...\n"); break;
             default:
-                printf("Unknown operation number!\n");
+                printf("\nUnknown operation number!\n");
         }
     } while (opcode >= 0);
     return 0;
