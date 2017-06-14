@@ -1,9 +1,11 @@
+/* File         : complex.c
+ * Description  : Simple complex number calculator
+ */
+
 #include <stdio.h>
-#include <tgmath.h>
 #include <complex.h>
 
-float complex cx1 = 0 + 0 * I, cx2 = 0 + 0 * I; // complex numbers
-double complex cx = 0 + 0 * I; // complex result number
+#include "funcscx.h"
 
 void read_numbers() {
     float fx1r = 0, fx1i = 0, fx2r = 0, fx2i = 0; // temporary floats
@@ -36,42 +38,19 @@ int main(int argc, char *argv[]) {
                 read_numbers(); break;
             case 1:
                 printf("\nAddition:\n");
-                cx = cx1 + cx2;
-                printf("\t(%g%+gi)+(%g%+gi) = (%g%+g)+(%g%+g)i = %g%+gi\n\n",
-                        creal(cx1), cimag(cx1), creal(cx2), cimag(cx2),
-                        creal(cx1), creal(cx2), cimag(cx1), cimag(cx2),
-                        creal(cx), cimag(cx));
+                cx_addition();
 		break;
             case 2:
                 printf("\nSubtraction:\n");
-                cx = cx1 - cx2;
-                printf("\t(%g%+gi)-(%g%+gi) = (%g%+g)+(%g%+g)i = %g%+gi\n\n",
-                        creal(cx1), cimag(cx1), creal(cx2), cimag(cx2),
-                        creal(cx1), -creal(cx2), cimag(cx1), -cimag(cx2),
-                        creal(cx), cimag(cx));
+                cx_subtraction();
 		break;
             case 3:
                 printf("\nMultiplication:\n");
-                cx = cx1 * cx2;
-                printf("\t(%g%+gi)*(%g%+gi) = ",
-                        creal(cx1), cimag(cx1), creal(cx2), cimag(cx2));
-                printf("((%g*%g)-(%g*%g))+((%g*%g)+(%g*%g))i = ",
-                        creal(cx1), creal(cx2), cimag(cx1), cimag(cx2),
-                        cimag(cx1), creal(cx2), creal(cx1), cimag(cx2));
-                printf("%g%+gi\n\n", creal(cx), cimag(cx));
+                cx_multiplication();
 		break;
             case 4:
                 printf("\nDivision:\n");
-                cx = cx1 / cx2;
-                printf("\t(%g%+gi)/(%g%+gi) = ",
-                        creal(cx1), cimag(cx1), creal(cx2), cimag(cx2));
-                printf("(((%g*%g)+(%g*%g))/((%g*%g)+(%g*%g)))+\n",
-                        creal(cx1), creal(cx2), cimag(cx1), cimag(cx2),
-                        creal(cx2), creal(cx2), cimag(cx2), cimag(cx2));
-                printf("\t+(((%g*%g)-(%g*%g))/((%g*%g)+(%g*%g)))i = ",
-                        cimag(cx1), creal(cx2), creal(cx1), cimag(cx2),
-                        creal(cx2), creal(cx2), cimag(cx2), cimag(cx2));
-                printf("%g%+gi\n\n", creal(cx), cimag(cx));
+                cx_division();
 		break;
             case -1:
                 printf("\nExit...\n"); break;

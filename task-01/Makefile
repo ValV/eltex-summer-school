@@ -4,9 +4,6 @@
 ##############################################################################
 #                                 Variables                                  #
 ##############################################################################
-# Compiler variables
-CC=gcc
-CFLAGS=-std=c99
 
 # Project tree variables
 BINDIR=bin
@@ -15,6 +12,10 @@ SRCDIR=src
 
 VPATH=$(SRCDIR)
 
+# Compiler variables
+CC=gcc
+CFLAGS=-std=c99
+
 # Program binary files
 PROG=complex
 LIST=$(addprefix $(BINDIR)/, $(PROG))
@@ -22,6 +23,7 @@ LIST=$(addprefix $(BINDIR)/, $(PROG))
 ##############################################################################
 #                               Generic rules                                #
 ##############################################################################
+
 # All binaries target
 all: $(LIST)
 
@@ -45,7 +47,14 @@ $(OBJDIR):
 ##############################################################################
 #                              Specific rules                                #
 ##############################################################################
-# For any targets with specific rules that can't be done with generic ones
+# For any targets with specific rules that can't be done with generic ones   #
+##############################################################################
+
+# Rule to build "complex" binary from object files
+$(BINDIR)/complex: $(OBJDIR)/complex.o $(OBJDIR)/funcscx.o
+	@echo Building binary files
+	$(CC) -o $@ $^
+
 
 ##############################################################################
 #                                Misc rules                                  #
