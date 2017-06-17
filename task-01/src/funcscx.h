@@ -5,16 +5,7 @@
 #ifndef FUNCSCX_H
 #define FUNCSCX_H
 
-#include <complex.h>
-
-// shared variables
-extern float complex cx1;
-extern float complex cx2;
-
-// function prototypes
-void cx_addition();
-void cx_subtraction();
-void cx_multiplication();
-void cx_division();
+// generic function type
+typedef void (*cx_func_t)(float, float, float, float);
 
 #endif /* FUNCSCX_H */
