@@ -3,12 +3,20 @@
  */
 
 #include <stdio.h>
-#include <complex.h>
+#include <dlfcn.h>
 
 #include "funcscx.h"
 
+struct module {
+    char *filename;
+    void *handle;
+    char *symbol;
+    cx_func_t function;
+}; // a structure to hold loadable module's params
+
+float fx1r = 0, fx1i = 0, fx2r = 0, fx2i = 0; // temporary floats
+
 void read_numbers() {
-    float fx1r = 0, fx1i = 0, fx2r = 0, fx2i = 0; // temporary floats
     printf("Enter complex numbers 'x1 x2' (where x=a+bi, e.g. -3+8i):\n");
     while (scanf("%f%fi %f%fi", &fx1r, &fx1i, &fx2r, &fx2i) != 4) {
         // input errors (show hint)
@@ -16,21 +24,52 @@ void read_numbers() {
         // flush the line if any
         while (!feof(stdin) && fgetc(stdin) != '\n');
     }
-    cx1 = fx1r + fx1i * I;
-    cx2 = fx2r + fx2i * I;
 }
 
 int main(int argc, char *argv[]) {
+    // fill in the array of modules (plugins)
+    struct module plugins[4] = {
+        {.filename = "libcxadd.so", .handle = NULL,
+            .symbol = "cx_addition", .function = NULL},
+        {.filename = "libcxsub.so", .handle = NULL,
+            .symbol = "cx_subtraction", .function = NULL},
+        {.filename = "libcxmul.so", .handle = NULL,
+            .symbol = "cx_multiplication", .function = NULL},
+        {.filename = "libcxdiv.so", .handle = NULL,
+            .symbol = "cx_division", .function = NULL}};
+
+    char *error;
+
     int opcode = 0;
+
+    // sequentially load modules (plugins)
+    for (int i = 0; i < 4; i ++) {
+        plugins[i].handle = dlopen(plugins[i].filename, RTLD_NOW);
+        if (plugins[i].handle) {
+            plugins[i].function =
+                (cx_func_t) dlsym(plugins[i].handle, plugins[i].symbol);
+            if ((error = dlerror()) != NULL)
+                fprintf(stderr, "%s\n", error);
+        }
+        else
+            fprintf(stderr, "%s\n", dlerror());
+    }
+
     read_numbers(); // prompt for input
     do {
         // display numbers
         printf("\nChoose operation for complex numbers: %g%+gi and %g%+gi:\n",
-                creal(cx1), cimag(cx1), creal(cx2), cimag(cx2));
+                fx1r, fx1i, fx2r, fx2i);
         // display menu
-        printf("\t%4d: change numbers\t %4d: exit program\n\n", 0, -1);
-        printf("\t%4d: addition (+)\t %4d: multiplication (*)\n", 1, 3);
-        printf("\t%4d: subtraction (-)\t %4d: division (/)\n", 2, 4);
+        printf("\t%4d: %15.15s\t%4d: %15.15s\n\n",
+                -1, "exit program", 0, "change numbers");
+        // build entries upon modules available
+        for (int i = 0, j = 0; i < 4; i ++) {
+            if (plugins[i].function) {
+                printf("\t%4d: %15.15s", i + 1, (plugins[i].symbol + 3));
+                if ((j ++) & 1 || i == 3) printf("\n");
+            }
+        }
         scanf("%d", &opcode);
         // process menu entry
         switch (opcode) {
@@ -38,19 +77,31 @@ int main(int argc, char *argv[]) {
                 read_numbers(); break;
             case 1:
                 printf("\nAddition:\n");
-                cx_addition();
+                if (plugins[opcode - 1].function)
+                    (*plugins[opcode - 1].function)(fx1r, fx1i, fx2r, fx2i);
+                else
+                    puts("Operation is not available");
 		break;
             case 2:
                 printf("\nSubtraction:\n");
-                cx_subtraction();
+                if (plugins[opcode - 1].function)
+                    (*plugins[opcode - 1].function)(fx1r, fx1i, fx2r, fx2i);
+                else
+                    puts("Operation is not available");
 		break;
             case 3:
                 printf("\nMultiplication:\n");
-                cx_multiplication();
+                if (plugins[opcode - 1].function)
+                    (*plugins[opcode - 1].function)(fx1r, fx1i, fx2r, fx2i);
+                else
+                    puts("Operation is not available");
 		break;
             case 4:
                 printf("\nDivision:\n");
-                cx_division();
+                if (plugins[opcode - 1].function)
+                    (*plugins[opcode - 1].function)(fx1r, fx1i, fx2r, fx2i);
+                else
+                    puts("Operation is not available");
 		break;
             case -1:
                 printf("\nExit...\n"); break;
@@ -58,5 +109,10 @@ int main(int argc, char *argv[]) {
                 printf("\nUnknown operation number!\n");
         }
     } while (opcode >= 0);
+
+    for (int i = 0; i < 4; i ++) {
+        if (plugins[i].handle) dlclose(plugins[i].handle);
+    }
+
     return 0;
 }

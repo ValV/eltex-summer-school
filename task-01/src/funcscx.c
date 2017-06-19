@@ -8,10 +8,12 @@
 
 #include "funcscx.h"
 
-float complex cx1 = 0 + 0 * I, cx2 = 0 + 0 * I; // complex numbers
-double complex cx = 0 + 0 * I; // complex result number
+static float complex cx1 = 0 + 0 * I, cx2 = 0 + 0 * I; // complex numbers
+static double complex cx = 0 + 0 * I; // complex result number
 
-void cx_addition() {
+cx_func_t cx_addition(float fx1r, float fx1i, float fx2r, float fx2i) {
+    cx1 = fx1r + fx1i * I;
+    cx2 = fx2r + fx2i * I;
     cx = cx1 + cx2;
     printf("\t(%g%+gi)+(%g%+gi) = (%g%+g)+(%g%+g)i = %g%+gi\n\n",
             creal(cx1), cimag(cx1), creal(cx2), cimag(cx2),
@@ -19,7 +21,9 @@ void cx_addition() {
             creal(cx), cimag(cx));
 }
 
-void cx_subtraction() {
+cx_func_t cx_subtraction(float fx1r, float fx1i, float fx2r, float fx2i) {
+    cx1 = fx1r + fx1i * I;
+    cx2 = fx2r + fx2i * I;
     cx = cx1 - cx2;
     printf("\t(%g%+gi)-(%g%+gi) = (%g%+g)+(%g%+g)i = %g%+gi\n\n",
             creal(cx1), cimag(cx1), creal(cx2), cimag(cx2),
@@ -27,7 +31,9 @@ void cx_subtraction() {
             creal(cx), cimag(cx));
 }
 
-void cx_multiplication() {
+cx_func_t cx_multiplication(float fx1r, float fx1i, float fx2r, float fx2i) {
+    cx1 = fx1r + fx1i * I;
+    cx2 = fx2r + fx2i * I;
     cx = cx1 * cx2;
     printf("\t(%g%+gi)*(%g%+gi) = ",
             creal(cx1), cimag(cx1), creal(cx2), cimag(cx2));
@@ -37,7 +43,9 @@ void cx_multiplication() {
     printf("%g%+gi\n\n", creal(cx), cimag(cx));
 }
 
-void cx_division() {
+cx_func_t cx_division(float fx1r, float fx1i, float fx2r, float fx2i) {
+    cx1 = fx1r + fx1i * I;
+    cx2 = fx2r + fx2i * I;
     cx = cx1 / cx2;
     printf("\t(%g%+gi)/(%g%+gi) = ",
             creal(cx1), cimag(cx1), creal(cx2), cimag(cx2));

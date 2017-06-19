@@ -7,33 +7,38 @@
 
 # Project tree variables
 BINDIR=bin
-OBJDIR=bin/obj
+OBJDIR=$(BINDIR)/obj
+PLGDIR=$(BINDIR)/plugins
 SRCDIR=src
 
 VPATH=$(SRCDIR)
 
 # Compiler variables
 CC=gcc
-CFLAGS=-std=c99
+CFLAGS=-std=c99 -fPIC
+LDFLAGS=-ldl -Wl,-R,'$$ORIGIN/plugins'
 
-# Program binary files
+# Program files
 PROG=complex
-LIST=$(addprefix $(BINDIR)/, $(PROG))
+PLUG=cxadd cxsub cxmul cxdiv
+APIS=funcscx.h
+BINS=$(addprefix $(BINDIR)/, $(PROG))
+MODS=$(addprefix $(PLGDIR)/, $(PLUG))
 
 ##############################################################################
 #                               Generic rules                                #
 ##############################################################################
 
 # All binaries target
-all: $(LIST)
+all: $(BINS) $(MODS)
 
 # Rule to build each binary from object files
 $(BINDIR)/%: $(OBJDIR)/%.o
 	@echo Building binary files
-	$(CC) -o $@ $<
+	$(CC) $(LDFLAGS) -o $@ $<
 
 # Rule to build each object file (and output directory) if sources are changed
-$(OBJDIR)/%.o: %.c %.h | $(OBJDIR)
+$(OBJDIR)/%.o: %.c %.h $(APIS) | $(OBJDIR)
 	@echo Building object files
 	$(CC) $(CFLAGS) -c -o $@ $<
 
@@ -42,7 +47,7 @@ $(OBJDIR)/%.o: %.c %.h | $(OBJDIR)
 
 # Rule to create output directory for binary and object files
 $(OBJDIR):
-	mkdir -p $(OBJDIR)
+	mkdir -p $(OBJDIR) $(PLGDIR)
 
 ##############################################################################
 #                              Specific rules                                #
@@ -51,9 +56,13 @@ $(OBJDIR):
 ##############################################################################
 
 # Rule to build "complex" binary from object files
-$(BINDIR)/complex: $(OBJDIR)/complex.o $(OBJDIR)/funcscx.o
+$(PLGDIR)/%: $(PLGDIR)/lib%.so ;
+
+.PRECIOUS: $(PLGDIR)/lib%.so
+
+$(PLGDIR)/lib%.so: $(OBJDIR)/%.o
 	@echo Building binary files
-	$(CC) -o $@ $^
+	$(CC) -shared -o $@  $<
 
 
 ##############################################################################
