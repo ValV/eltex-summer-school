@@ -1,6 +1,6 @@
 # Simple makefile
 
-PROG=mix
+PROG=mix fix
 
 all: $(PROG)
 
