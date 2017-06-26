@@ -1,6 +1,6 @@
 # Simple makefile
 
-PROG=mix fix
+PROG=mempad
 
 all: $(PROG)
 
