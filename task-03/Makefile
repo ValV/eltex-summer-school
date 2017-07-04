@@ -1,6 +1,6 @@
 # Makefile for task-03
 
-CFLAGS=-lpanel -lncurses
+CFLAGS=-lpanel -lmenu -lncurses
 
 ncfm: ncfm.c
 	gcc $(CFLAGS) -o $@ $<
@@ -8,4 +8,4 @@ ncfm: ncfm.c
 .PHONY: clean
 
 clean:
-	@rm -fv $%
+	@rm -fv ncfm
