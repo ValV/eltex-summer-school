@@ -1,4 +1,5 @@
-# Simple makefile
+# Description	: Build rules for task-02 (memory padding example)
+# Author	: ValV <ValV@users.noreply.github.com>
 
 PROG=mempad
 

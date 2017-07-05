@@ -1,4 +1,5 @@
-# Makefile for task-03
+# Description	: Build rules for task-03 (trivial ncurses file browser)
+# Author	: ValV <ValV@users.noreply.github.com>
 
 CFLAGS=-lpanel -lmenu -lncurses
 

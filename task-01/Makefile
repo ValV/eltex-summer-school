@@ -1,5 +1,5 @@
 # Description	: Build rules for task-01 (complex number calculator)
-# Author	: ValV <valv at linuxmail dot org>
+# Author	: ValV <ValV@users.noreply.github.com>
 
 ##############################################################################
 #                                 Variables                                  #
