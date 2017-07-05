@@ -1,11 +1,16 @@
 # Makefile for task-03
+# (trivial ncurses file browser)
 
 CFLAGS=-lpanel -lmenu -lncurses
 
-ncfm: ncfm.c
+PROG=ncfb
+
+all : $(PROG)
+
+%: %.c
 	gcc $(CFLAGS) -o $@ $<
 
 .PHONY: clean
 
 clean:
-	@rm -fv ncfm
+	rm -f $(PROG)
