@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <signal.h>
+#include <sys/ioctl.h>
 #include <panel.h>
 #include <menu.h>
 #include <form.h>
@@ -13,9 +14,12 @@ ITEM **create_items(const char *from_names[]);
 int free_items(ITEM **from_items);
 
 int create_windows();
-int free_windows(bool exit);
+int setup_menus();
+int setup_panels();
+int free_menus();
+int free_windows();
 
-void handler_terminate(int signal);
+void signal_handler(int signal);
 
 /* Definitions */
 
@@ -40,11 +44,13 @@ PANEL *panels[MAXWIN]; // top, middle, bottom, and center panels
 PANEL *focus_panel = NULL;
 WINDOW *menu_windows[MAXMEN]; // header menu and dialog menu sub-windows
 MENU *menus[MAXMEN]; // header menu and dialog menu
+
 META panels_meta[3] = { // HEADER, DIALOG, EDITOR metadata structures
     {NULL, NULL},
     {NULL, NULL},
     {NULL, NULL}
 };
+
 struct tagState {
     bool dialog_visible;
     bool dialog_do_open;
@@ -55,9 +61,13 @@ struct tagState {
     char *path_open;
     char *path_save;
 } menu_state = {false, true, 0, 0, "Open a file", "Save to file", NULL, NULL};
+
 /* Items for the header and the dialog menus */
 const char *menu_header[] = {"New", "Open", "Save", "Quit", NULL};
 const char *menu_dialog[] = {"Ok", "Cancel", NULL};
+
+/* Terminal size information */
+struct winsize terminal_size;
 
 /* Functions */
 int main(int argc, char *argv[])
@@ -73,8 +83,18 @@ int main(int argc, char *argv[])
     /* Create windows */
     create_windows();
 
+    /* Add menus */
+    setup_menus();
+
+    /* Attach metadata to panels */
+    setup_panels();
+
+    /* Update the screen */
+    update_panels();
+    doupdate();
+
     /* Do not process input if setting signal failed */
-    if (signal(SIGINT, handler_terminate) == SIG_ERR) input = 0;
+    if (signal(SIGINT, signal_handler) == SIG_ERR) input = 0;
 
     /* Process input */
     while (input) { // initially input=1
@@ -83,6 +103,15 @@ int main(int argc, char *argv[])
         focus_menu = ((META *) panel_userptr(focus_panel))->menu;
         switch (input) {
             case 0: break; // end loop (if received via signal)
+            case KEY_RESIZE: // intercept SIGWINCH with internal handler
+                    free_windows();
+                    endwin();
+                    refresh();
+                    clear();
+                    create_windows();
+                    setup_menus();
+                    setup_panels();
+                    break;
             case '\t': // switch panels
                 /* Reset highlight */
                 if (focus_window == windows[HEADER]) {
@@ -130,6 +159,19 @@ int main(int argc, char *argv[])
                     input = 0;
                     break;
                 }
+            case KEY_F(1): // F1: new file
+                set_current_item(focus_menu, (menu_items(focus_menu))[0]);
+                break;
+            case KEY_F(2): // F2: open file
+                set_current_item(focus_menu, (menu_items(focus_menu))[1]);
+                break;
+            case KEY_F(3): // F3: save file
+                set_current_item(focus_menu, (menu_items(focus_menu))[2]);
+                break;
+            case KEY_F(4): // F4: exit program
+                set_current_item(focus_menu, (menu_items(focus_menu))[3]);
+                input = 0;
+                break;
             default:
                 /* TODO: forward input to the menus and forms */
                 if (focus_menu != NULL) {
@@ -139,10 +181,13 @@ int main(int argc, char *argv[])
         /* Always update on changes (TODO: optimize) */
         update_panels();
         doupdate();
+        if (!input) sleep (1); // small delay before exit
     }
 
     /* Release curses resources */
-    free_windows(true);
+    free_menus(); // detach menus
+    free_windows(); // release windows resources
+    endwin(); // free_windows works only upon windows and panels
 
     return 0;
 } // int main
@@ -164,15 +209,36 @@ int init_curses()
     return 0;
 } // int init_curses
 
+/* This function produces basic UI construction - windows, sub-windows,
+ * and panels. This MUST precede setup_* and free_* functions */
 int create_windows()
 {
     int i = 0, max_x = 0, max_y = 0;
 
     /* Create windows (height, width, top, left) */
     windows[HEADER] = newwin(3, COLS, 0, 0); // 0-Top
+    windows[DIALOG] = newwin(6, COLS / 2, LINES / 2 - 3, COLS / 4); // 1-Center
     windows[EDITOR] = newwin(LINES - 5, COLS, 3, 0); // 2-Middle
     windows[FOOTER] = newwin(2, COLS, LINES - 2, 0); // 3-Bottom
-    windows[DIALOG] = newwin(6, COLS / 2, LINES / 2 - 3, COLS / 4); // 1-Center
+
+    /* Create sub-windows (first N menu windows) */
+    for (i = 0; i < MAXMEN; i ++) {
+        getmaxyx(windows[i], max_y, max_x);
+        switch (i) {
+            case DIALOG:
+                menu_windows[i] = derwin(windows[i],
+                        1, 16, max_y - 2, max_x / 2 - 8);
+                break;
+            default:
+                menu_windows[i] = derwin(windows[i],
+                        max_y - 2, max_x - 2, 1, 1);
+        }
+    }
+
+    /* Create panels (a panel for every window) */
+    for (i = 0; i < MAXWIN; i ++) {
+        panels[i] = new_panel(windows[i]);
+    }
 
     /* Draw frames (for some windows) */
     for (i = 0; i < MAXWIN; i ++) {
@@ -187,65 +253,71 @@ int create_windows()
         }
     }
 
-    /* Create menus (0 - HEADER, 1 - DIALOG) */
-    menus[HEADER] = new_menu(create_items(menu_header));
-    menus[DIALOG] = new_menu(create_items(menu_dialog));
+    return 0;
+} // int create_windows
 
-    /* Create menu sub-windows (first N windows) */
-    for (i = 0; i < MAXMEN; i ++) {
-        getmaxyx(windows[i], max_y, max_x);
-        switch (i) {
-            case DIALOG:
-                menu_windows[i] = derwin(windows[i],
-                        1, 16, max_y - 2, max_x / 2 - 8);
-                break;
-            default:
-                menu_windows[i] = derwin(windows[i],
-                        max_y - 2, max_x - 2, 1, 1);
-                break;
-        }
-    }
+/* This function MUST be called after create_windows function
+ * (as it depends on windows and sub-windows) */
+int setup_menus()
+{
+    int i = 0;
+
+    /* Create menus (0 - HEADER, 1 - DIALOG) if none exist*/
+    if (menus[HEADER] == NULL)
+        menus[HEADER] = new_menu(create_items(menu_header));
+    if (menus[DIALOG] == NULL)
+        menus[DIALOG] = new_menu(create_items(menu_dialog));
 
     /* Set menu windows and sub-windows */
     for (i = 0; i < MAXMEN; i ++) {
-        set_menu_win(menus[i], windows[i]);
-        set_menu_sub(menus[i], menu_windows[i]);
+        /* Extra checks if called before create_windows */
+        if (windows[i] != NULL)
+            set_menu_win(menus[i], windows[i]);
+        if (menu_windows[i] != NULL)
+            set_menu_sub(menus[i], menu_windows[i]);
         menu_opts_off(menus[i], O_SHOWDESC); // disable descriptions
         set_menu_mark(menus[i], " "); // set empty mark
     }
 
-    /* Set menu formats (multi-columnar menus) */
+    /* Set menu formats (multi-columnar one-line menus) */
     for (i = 0; menu_header[i] != NULL; i ++);
     set_menu_format(menus[HEADER], 1, i);
     for (i = 0; menu_dialog[i] != NULL; i ++);
     set_menu_format(menus[DIALOG], 1, i);
 
-    /* Create panels (a panel for every window) */
-    for (i = 0; i < MAXWIN; i ++) {
-        panels[i] = new_panel(windows[i]);
-    }
+    /* TODO: restore selected item according to the menu_status */
 
+    /* Post menus (with extra check for attached window) */
+    for (i = 0; i < MAXMEN; i ++)
+        if (windows[i] != NULL)
+            post_menu(menus[i]);
+
+    return 0;
+} // int setup_menus
+
+/* This function MUST be called after create_windows function
+ * and setup_menus function */
+int setup_panels()
+{
     /* Set user pointer (to the next focus panel and current menu if any) */
-    panels_meta[HEADER].menu = menus[HEADER];
-    panels_meta[HEADER].next = panels[EDITOR];
+    if (panels[HEADER] == NULL) return 1;
+    panels_meta[HEADER].menu = menus[HEADER]; // may be NULL
+    panels_meta[HEADER].next = panels[EDITOR]; // may be NULL
     set_panel_userptr(panels[HEADER], &panels_meta[HEADER]);
 
-    panels_meta[DIALOG].menu = menus[DIALOG];
+    if (panels[DIALOG] == NULL) return 2;
+    panels_meta[DIALOG].menu = menus[DIALOG]; // may be NULL
     panels_meta[DIALOG].next = NULL;
     set_panel_userptr(panels[DIALOG], &panels_meta[DIALOG]);
 
+    if (panels[EDITOR] == NULL) return 3;
     panels_meta[EDITOR].menu = NULL;
-    panels_meta[EDITOR].next = panels[HEADER];
+    panels_meta[EDITOR].next = panels[HEADER]; // may be NULL
     set_panel_userptr(panels[EDITOR], &panels_meta[EDITOR]);
-
-    /* Post menus */
-    for (i = 0; i < MAXMEN; i ++)
-        post_menu(menus[i]);
-    
-    /* TODO: restore selected item according to the menu_status */
 
     /* Update focus */
     if (menu_state.dialog_visible) {
+        show_panel(panels[DIALOG]);
         focus_panel = panels[DIALOG];
     } else {
         focus_panel = panels[EDITOR];
@@ -253,14 +325,12 @@ int create_windows()
     }
     top_panel(focus_panel);
 
-    /* Update the screen */
-    update_panels();
-    doupdate();
-
     return 0;
-} // int create_windows
+} // int setup_panels
 
-int free_windows(bool exit)
+/* This function HAVE TO be called after setup_menus function and SHOULD be
+ * called before free_windows function (as it depends on menus) */
+int free_menus()
 {
     int i = 0;
 
@@ -270,17 +340,26 @@ int free_windows(bool exit)
         free_items(menu_items(menus[i]));
         free_menu(menus[i]);
     }
-    if (exit) {
-        /* Do not destroy windows one-by-one just finish curses */
-        endwin();
-    } else {
-        for (i = 0; i < MAXWIN; i ++) {
-            /* Erase borders */
-            wborder(windows[i], ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ');
-            /* Destroy panel, then window */
-            del_panel(panels[i]);
-            delwin(windows[i]);
-        }
+
+    return i;
+} // int free_menus
+
+/* This function HAVE TO be called after create_windows function */
+int free_windows()
+{
+    int i = 0;
+
+    /* Detach menus (if any) before desroying windows */
+    for (i = 0; i < MAXMEN; i ++)
+        if (menus[i] != NULL)
+            unpost_menu(menus[i]);
+    /* Destroy windows */
+    for (i = 0; i < MAXWIN; i ++) {
+        /* Erase borders */
+        wborder(windows[i], ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ');
+        /* Destroy panel, then window */
+        del_panel(panels[i]);
+        delwin(windows[i]);
     }
 
     return i;
@@ -324,10 +403,22 @@ int free_items(ITEM **from_items)
     return num_free;
 } // int free_items
 
-void handler_terminate(int signal)
+void signal_handler(int signal)
 {
     /* Ctrl+C (SIGINT) signal handler */
-    if (signal == SIGINT) ungetch(0);
-} // int handler_terminate
+    switch (signal) {
+        case SIGINT:
+            ungetch(0);
+            break;
+        /* TODO: remove this condition (or remove entire handler) */
+        case SIGWINCH:
+            /* Recreate windows for the new terminal size */
+            ioctl(STDOUT_FILENO, TIOCGWINSZ, &terminal_size);
+            resizeterm(terminal_size.ws_row, terminal_size.ws_col);
+            break;
+        default:
+            break;
+    }
+} // void signal_handler
 
 /* vim: set et sw=4: */
