@@ -6,49 +6,76 @@
 #include <menu.h>
 #include <form.h>
 
-/* Declarations */
+/* Declarations. Macros */
+
+#define HEADER 0
+#define DIALOG 1
+#define EDITOR 2
+#define FOOTER 3
+
+#define MAXMEN 2
+#define MAXWIN 4
+
+#define EFIELD 0
+#define MAXEFI 1
+
+#define DFIELD 1
+#define MAXDFI 1
+
+#define KEY_TAB    0x09
+#define KEY_ESCAPE 0x1b
+
+/* Declarations. Types */
+
+typedef struct tagMETA {
+    MENU *menu;
+    FORM *edit;
+    PANEL *next;
+} META;
+
+typedef struct tagFOJA { // 9x4 bytes (36 bytes)
+    int height;
+    int width;
+    int top;
+    int left;
+    int offscreen;
+    int buffers;
+    int options;
+    int justification;
+    int attributes;
+} FOJA; // Field Parameters, Options, Justification, Attributes
 
 int init_curses();
 
 ITEM **create_items(const char *from_names[]);
 int free_items(ITEM **from_items);
 
+FIELD **create_fields(FOJA *from_options[]);
+int free_fields(FIELD **from_fields);
+
 int create_windows();
 int setup_menus();
 int setup_panels();
+int setup_forms();
+int free_forms();
 int free_menus();
 int free_windows();
 
 void signal_handler(int signal);
 
-/* Definitions */
+/* Definitions. Variables */
 
-#define HEADER 0
-#define DIALOG 1
-#define MAXMEN 2
-#define EDITOR 2
-#define FOOTER 3
-#define MAXWIN 4
-
-#define KEY_ESCAPE 0x1b
-
-/* Types */
-typedef struct tagMETA {
-    MENU *menu;
-    PANEL *next;
-} META;
-
-/* Variables */
 WINDOW *windows[MAXWIN]; // header menu, dialog, text editor, status windows
 PANEL *panels[MAXWIN]; // top, middle, bottom, and center panels
 PANEL *focus_panel = NULL;
 WINDOW *menu_windows[MAXMEN]; // header menu and dialog menu sub-windows
 MENU *menus[MAXMEN]; // header menu and dialog menu
+FORM *forms[MAXFOR]; // editor and dialog forms
 
-META panels_meta[3] = { // HEADER, DIALOG, EDITOR metadata structures
-    {NULL, NULL},
-    {NULL, NULL},
-    {NULL, NULL}
+META panels_meta[EDITOR + 1] = { // HEADER, DIALOG, EDITOR metadata structures
+    [HEADER] = {NULL, NULL, NULL},
+    [DIALOG] = {NULL, NULL, NULL},
+    [EDITOR] = {NULL, NULL, NULL}
 };
 
 struct tagState {
@@ -60,20 +87,32 @@ struct tagState {
     const char *title_save;
     char *path_open;
     char *path_save;
-} menu_state = {false, true, 0, 0, "Open a file", "Save to file", NULL, NULL};
+} menu_state = {true, true, 0, 0, "Open a file", "Save to file", NULL, NULL};
 
 /* Items for the header and the dialog menus */
 const char *menu_header[] = {"New", "Open", "Save", "Quit", NULL};
 const char *menu_dialog[] = {"Ok", "Cancel", NULL};
 
-/* Terminal size information */
+/* Fields for the editor and the dialog windows */
+FOJA field_options[MAXEFI + MAXDFI] = { // maximum EFIELDs + DFIELDs
+    /* Editor form fields */
+    [EFIELD] = {1, 0, 0, 0, 0, 0, 0, 0, 0},
+    /* Dialog form fields */
+    [DFIELD] = {1, 0, 0, 0, 0, 0, 0, 0, 0}
+};
+
+FOJA *fields_editor[] = {&field_options[EFIELD], NULL};
+FOJA *fields_dialog[] = {&field_options[DFIELD], NULL};
+
+/* Terminal size information (TODO: remove if not used) */
 struct winsize terminal_size;
 
-/* Functions */
+/* Definitions. Functions */
+
 int main(int argc, char *argv[])
 {
     int input = 1; // go inside while loop to get the first input
-    PANEL *temp_panel = NULL; // for switching between dialogs and static
+    PANEL *temp_panel = NULL; // for switching between panels
     WINDOW *focus_window = NULL;
     MENU *focus_menu = NULL;
 
@@ -97,7 +136,7 @@ int main(int argc, char *argv[])
     if (signal(SIGINT, signal_handler) == SIG_ERR) input = 0;
 
     /* Process input */
-    while (input) { // initially input=1
+    while (input) { // initially input = 1
         input = wgetch(stdscr); // blocking call
         focus_window = panel_window(focus_panel);
         focus_menu = ((META *) panel_userptr(focus_panel))->menu;
@@ -112,7 +151,7 @@ int main(int argc, char *argv[])
                     setup_menus();
                     setup_panels();
                     break;
-            case '\t': // switch panels
+            case KEY_TAB: // switch panels
                 /* Reset highlight */
                 if (focus_window == windows[HEADER]) {
                     wattron(focus_window, COLOR_PAIR(1));
@@ -141,37 +180,46 @@ int main(int argc, char *argv[])
                 break; // TODO: implement menu actions and frame input
             case KEY_DOWN:
                 break; // TODO: implement menu actions and frame input
-            case KEY_LEFT:
+            case KEY_LEFT: // select item to the left in any menu
                 if (focus_menu != NULL) {
                     menu_driver(focus_menu, REQ_LEFT_ITEM);
                     break;
                 }
-            case KEY_RIGHT:
+            case KEY_RIGHT: // select item to the right in any menu
                 if (focus_menu != NULL) {
                     menu_driver(focus_menu, REQ_RIGHT_ITEM);
                     break;
                 }
             case KEY_ENTER:
                 break; // TODO: implement menu actions and frame input
-            case KEY_ESCAPE:
+            case KEY_ESCAPE: // TODO: clear input buffer (menus)
                 if (focus_menu == menus[HEADER]) {
                     /* Quit only if header menu is focused */
                     input = 0;
                     break;
                 }
             case KEY_F(1): // F1: new file
-                set_current_item(focus_menu, (menu_items(focus_menu))[0]);
+                if (focus_menu == menus[HEADER]) {
+                    set_current_item(focus_menu, (menu_items(focus_menu))[0]);
+                }
                 break;
             case KEY_F(2): // F2: open file
-                set_current_item(focus_menu, (menu_items(focus_menu))[1]);
+                if (focus_menu == menus[HEADER]) {
+                    set_current_item(focus_menu, (menu_items(focus_menu))[1]);
+                }
                 break;
             case KEY_F(3): // F3: save file
-                set_current_item(focus_menu, (menu_items(focus_menu))[2]);
+                if (focus_menu == menus[HEADER]) {
+                    set_current_item(focus_menu, (menu_items(focus_menu))[2]);
+                }
                 break;
             case KEY_F(4): // F4: exit program
-                set_current_item(focus_menu, (menu_items(focus_menu))[3]);
+                if (focus_menu == menus[HEADER]) {
+                    set_current_item(focus_menu, (menu_items(focus_menu))[3]);
+                }
                 input = 0;
                 break;
+            case 0x20-0x7e: break; // printable ASCII characters
             default:
                 /* TODO: forward input to the menus and forms */
                 if (focus_menu != NULL) {
@@ -393,15 +441,63 @@ int free_items(ITEM **from_items)
 {
     int num_free = 0;
     while (from_items[num_free] != (ITEM *) NULL) {
-        /* Free every dirent structure of the item */
-        free((struct dirent *) item_userptr(from_items[num_free]));
-        /* Free the item (item name is already NULL, description points
-         * to menu_userptr, which is global array variable) */
+        /* Free the item (item name points to global array variable
+         * description is already NULL, item_userptr is unset) */
         free_item(from_items[num_free]);
         num_free ++;
     }
     return num_free;
 } // int free_items
+
+FIELD **create_fields(FOJA *from_options[])
+{
+    FIELD **field_list;
+    FOJA *foja = NULL;
+    int num_fields = 0;
+
+    /* Scan array of strings and stop if NULL-element is found */
+    for (; from_options[num_fields] != NULL; num_fields ++);
+
+    /* Allocate memory for new items */
+    field_list = (FIELD **) calloc(num_fields + 1, sizeof (FIELD *));
+    if (field_list == NULL) { // error allocating memory
+        return (FIELD **) NULL;
+    }
+
+    /* Create items or return if it's not possible to */
+    for (int i = 0; i < num_fields; i ++) {
+        foja = from_options[i];
+        field_list[i] = new_field(foja->height, foja->width,
+                foja->top, foja->left,
+                foja->offscreen, foja->buffers);
+        if (field_list[i] == NULL) {
+            return item_list; // error creating element (return NULL)
+        } else { // configure created field
+            if (foja->options)
+                if (foja->options > 0) // set positive, unset negative
+                    field_opts_on(field_list[i], foja->options);
+                else
+                    field_opts_off(field_list[i], foja->options);
+            if (foja->justification >= 0)
+                set_field_just(field_list[i], foja->justification);
+            /* TODO: implement field attributes change */
+        }
+    }
+
+    field_list[num_fields] = (FIELD *) NULL;
+    return field_list;
+} // FIELD **create_fields
+
+int free_fields(FIELD **from_fields)
+{
+    int num_free = 0;
+    while (from_fields[num_free] != NULL) {
+        /* Free the field */
+        free_field(from_fields[num_free]);
+        num_free ++;
+    }
+    return num_free;
+} // int free_fields
 
 void signal_handler(int signal)
 {
