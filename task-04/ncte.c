@@ -14,6 +14,7 @@
 #define FOOTER 3
 
 #define MAXMEN 2
+#define MAXFOR 2
 #define MAXWIN 4
 
 #define EFIELD 0
@@ -22,8 +23,8 @@
 #define DFIELD 1
 #define MAXDFI 1
 
-#define KEY_TAB    0x09
-#define KEY_ESCAPE 0x1b
+#define KEY_TAB       0x09
+#define KEY_ESCAPE    0x1b
 
 /* Declarations. Types */
 
@@ -41,8 +42,10 @@ typedef struct tagFOJA { // 9x4 bytes (36 bytes)
     int offscreen;
     int buffers;
     int options;
-    int justification;
-    int attributes;
+    unsigned justification;
+    unsigned attrib_fore;
+    unsigned attrib_back;
+    unsigned attrib_pad;
 } FOJA; // Field Parameters, Options, Justification, Attributes
 
 int init_curses();
@@ -55,8 +58,9 @@ int free_fields(FIELD **from_fields);
 
 int create_windows();
 int setup_menus();
-int setup_panels();
 int setup_forms();
+int setup_panels();
+
 int free_forms();
 int free_menus();
 int free_windows();
@@ -66,9 +70,12 @@ void signal_handler(int signal);
 /* Definitions. Variables */
 
 WINDOW *windows[MAXWIN]; // header menu, dialog, text editor, status windows
+WINDOW *menu_windows[MAXMEN]; // header menu and dialog menu sub-windows
+WINDOW *form_windows[MAXFOR]; // editor form and dialog form sub-windows
+
 PANEL *panels[MAXWIN]; // top, middle, bottom, and center panels
 PANEL *focus_panel = NULL;
-WINDOW *menu_windows[MAXMEN]; // header menu and dialog menu sub-windows
+
 MENU *menus[MAXMEN]; // header menu and dialog menu
 FORM *forms[MAXFOR]; // editor and dialog forms
 
@@ -87,18 +94,29 @@ struct tagState {
     const char *title_save;
     char *path_open;
     char *path_save;
-} menu_state = {true, true, 0, 0, "Open a file", "Save to file", NULL, NULL};
+    char *edit_buffer;
+} menu_state = {
+    true, true, 0, 0, "Open a file", "Save to file", NULL, NULL, NULL
+};
 
 /* Items for the header and the dialog menus */
-const char *menu_header[] = {"New", "Open", "Save", "Quit", NULL};
-const char *menu_dialog[] = {"Ok", "Cancel", NULL};
+const char *menu_header[] = {
+    "F1: New", "F2: Open", "F3: Save", "F4: Quit", NULL
+};
+const char *menu_dialog[] = {
+    "Ok", "Cancel", NULL
+};
 
 /* Fields for the editor and the dialog windows */
 FOJA field_options[MAXEFI + MAXDFI] = { // maximum EFIELDs + DFIELDs
     /* Editor form fields */
-    [EFIELD] = {1, 0, 0, 0, 0, 0, 0, 0, 0},
+    [EFIELD] = {1, 0, 0, 0, 0, 0,
+                -O_AUTOSKIP, JUSTIFY_LEFT,
+                0, 0, 0},
     /* Dialog form fields */
-    [DFIELD] = {1, 0, 0, 0, 0, 0, 0, 0, 0}
+    [DFIELD] = {1, 0, 1, 1, 0, 0,
+                -(O_AUTOSKIP | O_BLANK), 0,
+                0, A_UNDERLINE, 0}
 };
 
 FOJA *fields_editor[] = {&field_options[EFIELD], NULL};
@@ -115,6 +133,7 @@ int main(int argc, char *argv[])
     PANEL *temp_panel = NULL; // for switching between panels
     WINDOW *focus_window = NULL;
     MENU *focus_menu = NULL;
+    FORM *focus_form = NULL;
 
     /* Init curses */
     init_curses();
@@ -124,6 +143,9 @@ int main(int argc, char *argv[])
 
     /* Add menus */
     setup_menus();
+
+    /* Create forms */
+    setup_forms();
 
     /* Attach metadata to panels */
     setup_panels();
@@ -140,18 +162,21 @@ int main(int argc, char *argv[])
         input = wgetch(stdscr); // blocking call
         focus_window = panel_window(focus_panel);
         focus_menu = ((META *) panel_userptr(focus_panel))->menu;
+        focus_form = ((META *) panel_userptr(focus_panel))->edit;
         switch (input) {
             case 0: break; // end loop (if received via signal)
             case KEY_RESIZE: // intercept SIGWINCH with internal handler
+                    free_forms();
                     free_windows();
                     endwin();
                     refresh();
                     clear();
                     create_windows();
                     setup_menus();
+                    setup_forms();
                     setup_panels();
                     break;
-            case KEY_TAB: // switch panels
+            case KEY_ESCAPE: // switch panels
                 /* Reset highlight */
                 if (focus_window == windows[HEADER]) {
                     wattron(focus_window, COLOR_PAIR(1));
@@ -165,6 +190,7 @@ int main(int argc, char *argv[])
                 } else {
                     /* Hide panel with no next panel (dialog) */
                     hide_panel(focus_panel);
+                    menu_state.dialog_visible = false;
                     focus_panel = panels[EDITOR]; // return to editor window
                 }
                 focus_window = panel_window(focus_panel);
@@ -177,54 +203,87 @@ int main(int argc, char *argv[])
                 top_panel(focus_panel);
                 break;
             case KEY_UP:
-                break; // TODO: implement menu actions and frame input
+                if (focus_form == forms[0]) { // TODO: limit movement
+                    form_driver(focus_form, REQ_PREV_LINE);
+                }
+                break;
             case KEY_DOWN:
-                break; // TODO: implement menu actions and frame input
-            case KEY_LEFT: // select item to the left in any menu
-                if (focus_menu != NULL) {
+                if (focus_form == forms[0]) { // TODO: limit movement
+                    form_driver(focus_form, REQ_NEXT_LINE);
+                }
+                break;
+            case KEY_LEFT: // select next menu item or field character
+                if (focus_menu == menus[HEADER]) {
                     menu_driver(focus_menu, REQ_LEFT_ITEM);
-                    break;
+                } else if (focus_form != NULL) {
+                    form_driver(focus_form, REQ_PREV_CHAR);
                 }
-            case KEY_RIGHT: // select item to the right in any menu
-                if (focus_menu != NULL) {
+                break;
+            case KEY_RIGHT: // select next menu item or field character
+                if (focus_menu == menus[HEADER]) {
                     menu_driver(focus_menu, REQ_RIGHT_ITEM);
-                    break;
+                } else if (focus_form != NULL) {
+                    form_driver(focus_form, REQ_NEXT_CHAR);
                 }
+                break;
+            case KEY_TAB:
+                break;
+            case KEY_BACKSPACE:
+            case 0x08: // backspace character (ASCII BS)
+            case 0x7f: // backspace character (ASCII DEL)
+                if (focus_form != NULL)
+                    form_driver(focus_form, REQ_DEL_PREV);
+                break;
+            case KEY_DC: // delete character (0x014a)
+                if (focus_form != NULL)
+                    form_driver(focus_form, REQ_DEL_CHAR);
+                break;
             case KEY_ENTER:
-                break; // TODO: implement menu actions and frame input
-            case KEY_ESCAPE: // TODO: clear input buffer (menus)
-                if (focus_menu == menus[HEADER]) {
-                    /* Quit only if header menu is focused */
-                    input = 0;
-                    break;
+            case 0x0a: // Line feed key (Enter)
+                if (focus_form == forms[0]) {
+                    form_driver(focus_form, REQ_NEW_LINE);
                 }
+                break; // TODO: implement menu actions
             case KEY_F(1): // F1: new file
-                if (focus_menu == menus[HEADER]) {
-                    set_current_item(focus_menu, (menu_items(focus_menu))[0]);
+                /* Select respective menu item (visual effect only) */
+                if (focus_menu != menus[DIALOG]) {
+                    set_current_item(menus[HEADER],
+                                     (menu_items(menus[HEADER]))[0]);
                 }
                 break;
             case KEY_F(2): // F2: open file
-                if (focus_menu == menus[HEADER]) {
-                    set_current_item(focus_menu, (menu_items(focus_menu))[1]);
+                /* Select respective menu item (visual effect only) */
+                if (focus_menu != menus[DIALOG]) {
+                    set_current_item(menus[HEADER],
+                                     (menu_items(menus[HEADER]))[1]);
                 }
                 break;
             case KEY_F(3): // F3: save file
-                if (focus_menu == menus[HEADER]) {
-                    set_current_item(focus_menu, (menu_items(focus_menu))[2]);
+                /* Select respective menu item (visual effect only) */
+                if (focus_menu != menus[DIALOG]) {
+                    set_current_item(menus[HEADER],
+                                     (menu_items(menus[HEADER]))[2]);
                 }
                 break;
             case KEY_F(4): // F4: exit program
-                if (focus_menu == menus[HEADER]) {
-                    set_current_item(focus_menu, (menu_items(focus_menu))[3]);
-                }
+                /* Select respective menu item (visual effect only) */
+                set_current_item(menus[HEADER],
+                                 (menu_items(menus[HEADER]))[3]);
+                /* Request validation of the main editor field */
+                form_driver(forms[0], REQ_VALIDATION);
+                /* DEBUG: save editor buffer to log file */
+                FILE *logout = fopen("ncte.log", "w+");
+                fprintf(logout, "%s",
+                        field_buffer((form_fields(forms[0]))[0], 0));
+                fclose(logout);
+                /* Prevent next cycle iteration */
                 input = 0;
                 break;
-            case 0x20-0x7e: break; // printable ASCII characters
-            default:
-                /* TODO: forward input to the menus and forms */
-                if (focus_menu != NULL) {
-                    menu_driver(focus_menu, input);
+            case 0x20 ... 0x7e: // printable ASCII characters
+                if (focus_form != NULL) {
+                    form_driver(focus_form, input);
                 }
+            default: break;
         }
         /* Always update on changes (TODO: optimize) */
         update_panels();
@@ -233,9 +292,10 @@ int main(int argc, char *argv[])
     }
 
     /* Release curses resources */
-    free_menus(); // detach menus
-    free_windows(); // release windows resources
-    endwin(); // free_windows works only upon windows and panels
+    free_forms(); // release forms resources
+    free_menus(); // detach and free  menus
+    free_windows(); // release windows and panels resources
+    endwin();
 
     return 0;
 } // int main
@@ -269,7 +329,7 @@ int create_windows()
     windows[EDITOR] = newwin(LINES - 5, COLS, 3, 0); // 2-Middle
     windows[FOOTER] = newwin(2, COLS, LINES - 2, 0); // 3-Bottom
 
-    /* Create sub-windows (first N menu windows) */
+    /* Create menu sub-windows (first N menu windows) */
     for (i = 0; i < MAXMEN; i ++) {
         getmaxyx(windows[i], max_y, max_x);
         switch (i) {
@@ -283,12 +343,18 @@ int create_windows()
         }
     }
 
+    /* Create form sub-windows (may not match with menu sub-windows) */
+    getmaxyx(windows[EDITOR], max_y, max_x);
+    form_windows[0] = derwin(windows[EDITOR], max_y, max_x, 0, 0);
+    getmaxyx(windows[DIALOG], max_y, max_x);
+    form_windows[1] = derwin(windows[DIALOG], 3, max_x - 2, 1, 1);
+
     /* Create panels (a panel for every window) */
     for (i = 0; i < MAXWIN; i ++) {
         panels[i] = new_panel(windows[i]);
     }
 
-    /* Draw frames (for some windows) */
+    /* Draw frames (for some (sub) windows) */
     for (i = 0; i < MAXWIN; i ++) {
         switch (i) {
             case HEADER:
@@ -310,7 +376,7 @@ int setup_menus()
 {
     int i = 0;
 
-    /* Create menus (0 - HEADER, 1 - DIALOG) if none exist*/
+    /* Create menus (0 - HEADER, 1 - DIALOG) if none exist */
     if (menus[HEADER] == NULL)
         menus[HEADER] = new_menu(create_items(menu_header));
     if (menus[DIALOG] == NULL)
@@ -343,23 +409,26 @@ int setup_menus()
     return 0;
 } // int setup_menus
 
-/* This function MUST be called after create_windows function
- * and setup_menus function */
+/* This function MUST be called after create_windows function,
+ * setup_menus, and setup_forms functions */
 int setup_panels()
 {
     /* Set user pointer (to the next focus panel and current menu if any) */
     if (panels[HEADER] == NULL) return 1;
     panels_meta[HEADER].menu = menus[HEADER]; // may be NULL
+    panels_meta[HEADER].edit = NULL;
     panels_meta[HEADER].next = panels[EDITOR]; // may be NULL
     set_panel_userptr(panels[HEADER], &panels_meta[HEADER]);
 
     if (panels[DIALOG] == NULL) return 2;
     panels_meta[DIALOG].menu = menus[DIALOG]; // may be NULL
+    panels_meta[DIALOG].edit = forms[1];
     panels_meta[DIALOG].next = NULL;
     set_panel_userptr(panels[DIALOG], &panels_meta[DIALOG]);
 
     if (panels[EDITOR] == NULL) return 3;
     panels_meta[EDITOR].menu = NULL;
+    panels_meta[EDITOR].edit = forms[0];
     panels_meta[EDITOR].next = panels[HEADER]; // may be NULL
     set_panel_userptr(panels[EDITOR], &panels_meta[EDITOR]);
 
@@ -375,6 +444,72 @@ int setup_panels()
 
     return 0;
 } // int setup_panels
+
+int setup_forms()
+{
+    int i = 0, max_x = 0, max_y = 0;
+
+    /* Create forms (0 - EDITOR, 1 - DIALOG) if none exist */
+    if (forms[0] == NULL) {
+        getmaxyx(form_windows[0], max_y, max_x);
+        field_options[EFIELD].height = max_y;
+        field_options[EFIELD].width = max_x;
+        forms[0] = new_form(create_fields(fields_editor));
+        /* Restore editor buffer (if it was previously saved) */
+        if (menu_state.edit_buffer != NULL)
+            set_field_buffer((form_fields(forms[0]))[0],
+                             0, menu_state.edit_buffer); // */
+    }
+    if (forms[1] == NULL) {
+        getmaxyx(form_windows[1], max_y, max_x);
+        field_options[DFIELD].width = max_x - 2;
+        forms[1] = new_form(create_fields(fields_dialog));
+    }
+
+    /* Set form windows and sub-windows */
+    if (windows[EDITOR] != NULL) {
+        set_form_win(forms[0], windows[EDITOR]);
+        /* Set form_windows[0] for forms[0] (if not NULL) */
+        if (form_windows[0] != NULL)
+            set_form_sub(forms[0], form_windows[0]);
+        /* Post editor form */
+        post_form(forms[0]);
+        i ++; // successfully posted form counter
+    }
+
+    if (windows[DIALOG] != NULL) {
+        set_form_win(forms[1], windows[DIALOG]);
+        /* Set form_windows[1] for forms[1] (if not NULL) */
+        if (form_windows[1] != NULL)
+            set_form_sub(forms[1], form_windows[1]);
+        /* Post dialog form */
+        post_form(forms[1]);
+        i ++; // successfully posted form counter
+    }
+
+    return i; // number of successfully posted forms
+} // int setup_forms
+
+int free_forms()
+{
+    int i = 0;
+    FIELD *editor = (form_fields(forms[0]))[0];
+
+    /* Save editor buffer prior destruction */
+    form_driver(forms[0], REQ_VALIDATION); // validate unsaved changes
+    menu_state.edit_buffer = field_buffer(editor, 0);
+    set_field_buffer(editor, 0, NULL); // fake buffer to be deallocated
+
+    /* Unpost, detach and free menus and items */
+    for (i = 0; i < MAXFOR; i ++) {
+        unpost_form(forms[i]);
+        free_fields(form_fields(forms[i]));
+        free_form(forms[i]);
+        forms[i] = NULL; // clear invalid pointer
+    }
+
+    return i;
+} // int free_forms
 
 /* This function HAVE TO be called after setup_menus function and SHOULD be
  * called before free_windows function (as it depends on menus) */
@@ -471,16 +606,21 @@ FIELD **create_fields(FOJA *from_options[])
                 foja->top, foja->left,
                 foja->offscreen, foja->buffers);
         if (field_list[i] == NULL) {
-            return item_list; // error creating element (return NULL)
+            return field_list; // error creating element (return NULL)
         } else { // configure created field
             if (foja->options)
                 if (foja->options > 0) // set positive, unset negative
                     field_opts_on(field_list[i], foja->options);
                 else
                     field_opts_off(field_list[i], foja->options);
-            if (foja->justification >= 0)
+            if (foja->justification)
                 set_field_just(field_list[i], foja->justification);
-            /* TODO: implement field attributes change */
+            if (foja->attrib_fore)
+                set_field_fore(field_list[i], foja->attrib_fore);
+            if (foja->attrib_back)
+                set_field_back(field_list[i], foja->attrib_back);
+            if (foja->attrib_pad)
+                set_field_fore(field_list[i], foja->attrib_pad);
         }
     }
 

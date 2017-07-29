@@ -1,7 +1,7 @@
 # Makefile for task-03
 # (trivial ncurses file browser)
 
-CFLAGS=-lform -lmenu -lpanel -lncurses
+CFLAGS=-g -O0 -lform -lmenu -lpanel -lncurses
 
 PROG=ncte
 
