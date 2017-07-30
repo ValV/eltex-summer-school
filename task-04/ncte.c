@@ -23,6 +23,9 @@
 #define DFIELD 1
 #define MAXDFI 1
 
+#define MEMO   0
+#define PATH   1
+
 #define KEY_TAB       0x09
 #define KEY_ESCAPE    0x1b
 
@@ -34,7 +37,7 @@ typedef struct tagMETA {
     PANEL *next;
 } META;
 
-typedef struct tagFOJA { // 9x4 bytes (36 bytes)
+typedef struct tagFOJA { // 11x4 bytes (44 bytes)
     int height;
     int width;
     int top;
@@ -85,7 +88,7 @@ META panels_meta[EDITOR + 1] = { // HEADER, DIALOG, EDITOR metadata structures
     [EDITOR] = {NULL, NULL, NULL}
 };
 
-struct tagState {
+struct tagState { // program state to survive recreations
     bool dialog_visible;
     bool dialog_do_open;
     int dialog_selected;
@@ -163,8 +166,9 @@ int main(int argc, char *argv[])
         focus_window = panel_window(focus_panel);
         focus_menu = ((META *) panel_userptr(focus_panel))->menu;
         focus_form = ((META *) panel_userptr(focus_panel))->edit;
+        /* Main (keypress processing) multiway branch */
         switch (input) {
-            case 0: break; // end loop (if received via signal)
+            case 0: break; // end loop (if received via wgetch)
             case KEY_RESIZE: // intercept SIGWINCH with internal handler
                     free_forms();
                     free_windows();
@@ -242,6 +246,32 @@ int main(int argc, char *argv[])
             case 0x0a: // Line feed key (Enter)
                 if (focus_form == forms[0]) {
                     form_driver(focus_form, REQ_NEW_LINE);
+                } else if (focus_menu == menus[HEADER]) {
+                    switch (item_index(current_item(focus_menu))) {
+                        case 0:
+                            input = KEY_MAX + 1;
+                            break;
+                        case 1:
+                            input = KEY_MAX + 2;
+                            break;
+                        case 2:
+                            input = KEY_MAX + 3;
+                            break;
+                        case 3:
+                            input = KEY_MAX + 4;
+                            break;
+                        default: break;
+                    }
+                } else if (focus_menu == menus[DIALOG]) {
+                    switch (item_index(current_item(focus_menu))) {
+                        case 0:
+                            input = KEY_MAX + 5;
+                            break;
+                        case 1:
+                            input = KEY_MAX + 6;
+                            break;
+                        default: break;
+                    }
                 }
                 break; // TODO: implement menu actions
             case KEY_F(1): // F1: new file
@@ -249,6 +279,7 @@ int main(int argc, char *argv[])
                 if (focus_menu != menus[DIALOG]) {
                     set_current_item(menus[HEADER],
                                      (menu_items(menus[HEADER]))[0]);
+                    input = KEY_MAX + 1;
                 }
                 break;
             case KEY_F(2): // F2: open file
@@ -256,6 +287,7 @@ int main(int argc, char *argv[])
                 if (focus_menu != menus[DIALOG]) {
                     set_current_item(menus[HEADER],
                                      (menu_items(menus[HEADER]))[1]);
+                    input = KEY_MAX + 2;
                 }
                 break;
             case KEY_F(3): // F3: save file
@@ -263,26 +295,46 @@ int main(int argc, char *argv[])
                 if (focus_menu != menus[DIALOG]) {
                     set_current_item(menus[HEADER],
                                      (menu_items(menus[HEADER]))[2]);
+                    input = KEY_MAX + 3;
                 }
                 break;
             case KEY_F(4): // F4: exit program
                 /* Select respective menu item (visual effect only) */
                 set_current_item(menus[HEADER],
                                  (menu_items(menus[HEADER]))[3]);
-                /* Request validation of the main editor field */
-                form_driver(forms[0], REQ_VALIDATION);
-                /* DEBUG: save editor buffer to log file */
-                FILE *logout = fopen("ncte.log", "w+");
-                fprintf(logout, "%s",
-                        field_buffer((form_fields(forms[0]))[0], 0));
-                fclose(logout);
-                /* Prevent next cycle iteration */
-                input = 0;
+                input = KEY_MAX + 4;
                 break;
             case 0x20 ... 0x7e: // printable ASCII characters
                 if (focus_form != NULL) {
                     form_driver(focus_form, input);
                 }
+            default: break;
+        }
+
+        /* Additional (menu processing) multiway branch */
+        switch (input) {
+            case KEY_MAX + 1: // header menu -> new (F1)
+                break;
+            case KEY_MAX + 2: // header menu -> open (F2)
+                break;
+            case KEY_MAX + 3: // header menu -> save (F3)
+                break;
+            case KEY_MAX + 4: // header menu -> quit (F4)
+                /* Request validation of the main editor field */
+                form_driver(forms[0], REQ_VALIDATION);
+
+                /* DEBUG: save editor buffer to log file */
+                FILE *logout = fopen("ncte.log", "w+");
+                fprintf(logout, "%s",
+                        field_buffer((form_fields(forms[0]))[0], 0));
+                fclose(logout);
+
+                input = 0; // prevent next cycle iteration
+                break;
+            case KEY_MAX + 5: // dialog menu -> ok
+                break;
+            case KEY_MAX + 6: // dialog menu -> cancel
+                break;
             default: break;
         }
         /* Always update on changes (TODO: optimize) */
