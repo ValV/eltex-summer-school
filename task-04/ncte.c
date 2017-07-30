@@ -127,8 +127,12 @@ FOJA field_options[MAXEFI + MAXDFI] = { // maximum EFIELDs + DFIELDs
                     0, 0, 0}
 };
 
-FOJA *fields_editor[] = {&field_options[EFIELD], NULL};
-FOJA *fields_dialog[] = {&field_options[DFIELD], &field_options[DFIELD + 1], NULL};
+FOJA *fields_editor[] = {
+    &field_options[EFIELD], NULL
+};
+FOJA *fields_dialog[] = {
+    &field_options[DFIELD], &field_options[DFIELD + 1], NULL
+};
 
 /* Terminal size information (TODO: remove if not used) */
 struct winsize terminal_size;
@@ -138,10 +142,12 @@ struct winsize terminal_size;
 int main(int argc, char *argv[])
 {
     int input = 1; // go inside while loop to get the first input
-    PANEL *temp_panel = NULL; // for switching between panels
     WINDOW *focus_window = NULL;
     MENU *focus_menu = NULL;
     FORM *focus_form = NULL;
+    FILE *file;
+    int position = 0, length = 0;
+    char *path;
 
     /* Init curses */
     init_curses();
@@ -175,16 +181,16 @@ int main(int argc, char *argv[])
         switch (input) {
             case 0: break; // end loop (if received via wgetch)
             case KEY_RESIZE: // intercept SIGWINCH with internal handler
-                    free_forms();
-                    free_windows();
-                    endwin();
-                    refresh();
-                    clear();
-                    create_windows();
-                    setup_menus();
-                    setup_forms();
-                    setup_panels();
-                    break;
+                free_forms();
+                free_windows();
+                endwin();
+                refresh();
+                clear();
+                create_windows();
+                setup_menus();
+                setup_forms();
+                setup_panels();
+                break;
             case KEY_ESCAPE: // switch panels
                 if (focus_panel == panels[DIALOG])
                     input = KEY_MAX + 6; // dialog -> cancel
@@ -291,7 +297,7 @@ int main(int argc, char *argv[])
                         default: break;
                     }
                 }
-                break; // TODO: implement menu actions
+                break;
             case KEY_F(1): // F1: new file
                 /* Select respective menu item (visual effect only) */
                 if (focus_menu != menus[DIALOG]) {
@@ -371,18 +377,42 @@ int main(int argc, char *argv[])
                 focus_panel = panels[DIALOG];
                 break;
             case KEY_MAX + 4: // header menu -> quit (F4)
-                /* Request validation of the main editor field */
-                form_driver(forms[MEMO], REQ_VALIDATION);
-
-                /* DEBUG: save editor buffer to log file */
-                FILE *logout = fopen("ncte.log", "w+");
-                fprintf(logout, "%s",
-                        field_buffer((form_fields(forms[MEMO]))[INPUT], 0));
-                fclose(logout);
-
                 input = 0; // prevent next cycle iteration
                 break;
             case KEY_MAX + 5: // dialog menu -> ok
+                /* Request validation of the main editor field */
+                form_driver(forms[PATH], REQ_VALIDATION);
+                path = field_buffer((form_fields(forms[PATH]))[INPUT], 0);
+                /* Find first space */
+                for (position = 0; path[position] != ' '; position ++);
+                path[position] = '\0'; // temporarily terminate buffer
+                if (menu_state.dialog_do_open) { // read from a file
+                    file = fopen(path, "r");
+                    if (file) {
+                        fseek(file, 0, SEEK_END);
+                        length = ftell(file);
+                        fseek(file, 0, SEEK_SET);
+                        menu_state.edit_buffer = malloc(length);
+                        if (menu_state.edit_buffer) {
+                            fread(menu_state.edit_buffer, 1, length, file);
+                        }
+                        fclose(file);
+                    }
+                    /* Display read data in editor window (memo form) */
+                    if (menu_state.edit_buffer)
+                        set_field_buffer((form_fields(forms[MEMO]))[INPUT],
+                                0, menu_state.edit_buffer);
+                } else { // write to a file
+                    menu_state.edit_buffer =
+                        field_buffer((form_fields(forms[MEMO]))[INPUT], 0);
+                    file = fopen(path, "w+");
+                    if (file) {
+                        fprintf(file, "%s", menu_state.edit_buffer);
+                        fclose(file);
+                    }
+                }
+                path[position] = ' '; // restore terminated space in buffer
+                ungetch(KEY_ESCAPE);
                 break;
             case KEY_MAX + 6: // dialog menu -> cancel
                 /* Request validation of the main editor field */
