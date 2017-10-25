@@ -1,6 +1,5 @@
 #include <stdlib.h>
 #include <unistd.h>
-#include <signal.h>
 #include <sys/ioctl.h>
 #include <panel.h>
 #include <menu.h>
@@ -49,49 +48,26 @@ typedef struct tagState {
 } STATE;
 
 
+/* Declaration. Functions */
+
 /* Auxiliary functions */
 
-/* Create items function. Creates a null-terminated list of items */
 ITEM **create_items(const char *from_names[]);
-
-/* Free items function. Sequentially releases resources of items */
 int free_items(ITEM **from_items);
-
-/* Create fields function. Creates a null-terminated list of fields */
 FIELD **create_fields(FOJA *from_options[]);
-
-/* Free fields function. Sequentially releases resources of fields */
 int free_fields(FIELD **from_fields);
 
 
 /* Ncurses setup functions */
 
-/* Initialize curses function. Initializes ncurses context */
 int init_curses();
-
-/* Create windows function. Creates windows, subwindows, and panels */
 int create_windows();
-
-/* Setup menu function. Creates or configures menus for windows */
 int setup_menus();
-
-/* Setup forms function.  Creates forms for windows */
 int setup_forms();
-
-/* Setup panels function. Configures existing panels */
 int setup_panels();
-
-/* Free forms function. Releses all forms resourses */
 int free_forms();
-
-/* Free menu function. Releases all menus resources */
 int free_menus();
-
-/* Free windows function. Releases all windows resources */
 int free_windows();
-
-/* System signal handler function (obsolete) */
-void signal_handler(int signal);
 
 
 /* Definition. Variables */
@@ -273,11 +249,6 @@ int main(int argc, char *argv[])
     /* Update the screen */
     update_panels();
     doupdate();
-
-    /* Do not process input if setting signal failed */
-    if (signal(SIGINT, signal_handler) == SIG_ERR) {
-        input = 0;
-    }
 
     /* Process input (initially input == 1) */
     while (input) {
@@ -546,6 +517,7 @@ int main(int argc, char *argv[])
                         fseek(file, 0, SEEK_END);
                         length = ftell(file);
                         fseek(file, 0, SEEK_SET);
+                        free (menu_state.edit_buffer);
                         menu_state.edit_buffer = malloc(length);
                         if (menu_state.edit_buffer) {
                             fread(menu_state.edit_buffer, 1, length, file);
@@ -561,6 +533,7 @@ int main(int argc, char *argv[])
                     }
                 } else {
                     /* Write to a file */
+                    free(menu_state.edit_buffer);
                     menu_state.edit_buffer =
                         field_buffer((
                                          form_fields(forms[form_editor])
@@ -609,12 +582,8 @@ int main(int argc, char *argv[])
     endwin();
 
     /* Release dynamically allocated pointers */
-    if (menu_state.path_to_file != NULL) {
-        free(menu_state.path_to_file);
-    }
-    if (menu_state.edit_buffer != NULL) {
-        free(menu_state.edit_buffer);
-    }
+    free(menu_state.path_to_file);
+    free(menu_state.edit_buffer);
 
     return 0;
 } /* int main */
@@ -893,6 +862,7 @@ int free_forms()
 
     /* Save editor buffer prior destruction */
     form_driver(forms[form_editor], REQ_VALIDATION);
+    free(menu_state.edit_buffer);
     menu_state.edit_buffer = field_buffer(editor, 0);
     set_field_buffer(editor, 0, NULL);
 
@@ -966,12 +936,18 @@ int free_windows()
 /*
  * Create items function (auxiliary)
  *
- * This function sequentially creates menu items from given name list
- * (null-terminated array of strings).
- * This function accepts a null-terminated array of pointers to strings that
- * hold names for each menu element.
- * This function returns a null-terminated array of pointers to menu items
- * suitable for use by new_menu and free_menu ncurses functions.
+ * This function sequentially creates menu items.
+ *
+ * from_names - a null-terminated array of pointers to strings (null-
+ *              terminated arrays of char).
+ *
+ * return - a null-terminated array of pointers to ITEM * to pass to
+ *          <new_menu> function, or just NULL if error occurs, or item_list
+ *          has no elements.
+ *
+ * NOTE: if error occurs on the first ITEM creation (<new_item>), then this
+ *       function will return a pointer to the array with the only one NULL
+ *       element.
  */
 ITEM **create_items(const char *from_names[])
 {
@@ -981,10 +957,15 @@ ITEM **create_items(const char *from_names[])
     /* Scan array of strings and stop if NULL-element is found */
     for (; from_names[num_items] != NULL; num_items ++);
 
-    /* Allocate memory for new items */
-    item_list = (ITEM **) calloc(num_items + 1, sizeof (ITEM *));
-    if (item_list == NULL) {
-        /* Error allocating memory */
+    /* Allocate memory for new items (if any) */
+    if (num_items) {
+        item_list = (ITEM **) calloc(num_items + 1, sizeof (ITEM *));
+        if (item_list == NULL) {
+            /* Error allocating memory */
+            return NULL;
+        }
+    } else {
+        /* No items */
         return NULL;
     }
 
@@ -992,7 +973,8 @@ ITEM **create_items(const char *from_names[])
     for (int i = 0; i < num_items; i ++) {
         item_list[i] = new_item(from_names[i], NULL);
         if (item_list[i] == NULL) {
-            /* Error creating element */
+            /* Error creating element (return that were created) */
+            item_list = realloc(item_list, sizeof (ITEM *) * (i + 1));
             return item_list;
         }
     }
@@ -1004,33 +986,48 @@ ITEM **create_items(const char *from_names[])
 /*
  * Free items function (auxiliary)
  *
- * This function sequentially releases resources of menu items.
- * This function accepts a null-terminated array of pointers to menu items
- * (previously created by create_items function).
- * This function returns number of released elements or zero,
- * if no items were found.
+ * This function sequentially releases resources hold by menu items.
+ *
+ * from_items - must be a pointer to a null-terminated array of pointers.
+ *
+ * return - number of released elements.
+ *
+ * WARNING: passing a variable other than null-terminated list of pointers,
+ *          from <create_item> function will cause severe errors.
  */
 int free_items(ITEM **from_items)
 {
     int num_free = 0;
-    while (from_items[num_free] != NULL) {
-        /* Free the item (item name points to global array variable
-         * description is already NULL, item_userptr is unset) */
-        free_item(from_items[num_free]);
-        num_free ++;
+
+    if (from_items != NULL) {
+        while (from_items[num_free] != NULL) {
+            /* Free the item (item name points to global array variable
+             * description is already NULL, item_userptr is unset) */
+            free_item(from_items[num_free]);
+            num_free ++;
+        }
     }
+
+    /* Release the item list (may be NULL) */
+    free(from_items);
+
     return num_free;
 } /* int free_items */
 
 /*
  * Create fields function (auxiliary)
  *
- * This function creates a list of fields according to the given list of
- * field parameters.
- * This function accepts a null-terminated array of pointers to tagFOJA
- * structures that hold parameters for each field.
- * This function returns a null-terminated array of pointers to fields,
- * suitable for use by new_form and free_form ncurses functions.
+ * This function creates a list of fields.
+ *
+ * from_options - an array of pointers to FOJA that hold options for the
+ *                relevant fields.
+ *
+ * return - a null-terminated array of pointers to FIELD * to pass to
+ *          <new_form> function.
+ *
+ * NOTE: if error occurs on the first ITEM creation (<new_field>), then this
+ *       function will return a pointer to the array with the only one NULL
+ *       element.
  */
 FIELD **create_fields(FOJA *from_options[])
 {
@@ -1041,10 +1038,15 @@ FIELD **create_fields(FOJA *from_options[])
     /* Scan array of strings and stop if NULL-element is found */
     for (; from_options[num_fields] != NULL; num_fields ++);
 
-    /* Allocate memory for new items */
-    field_list = (FIELD **) calloc(num_fields + 1, sizeof (FIELD *));
-    if (field_list == NULL) {
-        /* Error allocating memory */
+    /* Allocate memory for new items (if any) */
+    if (num_fields) {
+        field_list = (FIELD **) calloc(num_fields + 1, sizeof (FIELD *));
+        if (field_list == NULL) {
+            /* Error allocating memory */
+            return NULL;
+        }
+    } else {
+        /* No fields */
         return NULL;
     }
 
@@ -1055,7 +1057,8 @@ FIELD **create_fields(FOJA *from_options[])
                 foja->top, foja->left,
                 foja->offscreen, foja->buffers);
         if (field_list[i] == NULL) {
-            /* Error creating element (return NULL) */
+            /* Error creating element (break) */
+            field_list = realloc(field_list, sizeof (FIELD *) * (i + 1));
             return field_list;
         } else {
             /* Configure created field */
@@ -1091,44 +1094,31 @@ FIELD **create_fields(FOJA *from_options[])
 /*
  * Free fields function (auxiliary)
  *
- * This function releases resources of form fields (previously created by
- * create_fields function).
- * This function accepts a null-terminated array of pointers to fields.
- * This function returns number of released fields or zero, if no fields
- * were found.
+ * This function releases resources hold by form fields.
+ *
+ * from_fields - must be a pointer to a null-terminated array of pointers.
+ *
+ * return - number of released elements.
+ *
+ * WARNING: passing a variable other than null-terminated list of pointers,
+ *          from <create_fields> function will cause severe errors.
  */
 int free_fields(FIELD **from_fields)
 {
     int num_free = 0;
-    while (from_fields[num_free] != NULL) {
-        /* Free the field */
-        free_field(from_fields[num_free]);
-        num_free ++;
+
+    if (from_fields != NULL) {
+        while (from_fields[num_free] != NULL) {
+            /* Free the field */
+            free_field(from_fields[num_free]);
+            num_free ++;
+        }
     }
+
+    /* Release the field list (may be NULL) */
+    free(from_fields);
+
     return num_free;
 } /* int free_fields */
-
-/*
- * Signal handler function (obsolete)
- *
- * This function handles signals sent by the operationg system.
- */
-void signal_handler(int signal)
-{
-    /* Ctrl+C (SIGINT) signal handler */
-    switch (signal) {
-        case SIGINT:
-            ungetch('\0');
-            break;
-        /* TODO: remove this condition (or remove entire handler) */
-        case SIGWINCH:
-            /* Recreate windows for the new terminal size */
-            ioctl(STDOUT_FILENO, TIOCGWINSZ, &terminal_size);
-            resizeterm(terminal_size.ws_row, terminal_size.ws_col);
-            break;
-        default:
-            break;
-    }
-} /* void signal_handler */
 
 /* vim: set et sw=4: */
