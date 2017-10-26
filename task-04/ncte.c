@@ -36,12 +36,12 @@ typedef struct tagFOJA {
 } FOJA; // 11x4 bytes (44 bytes)
 
 /* Structure to hold new lines for edit buffer (TODO) */
-typedef struct tagLines {
+typedef struct tagNL {
     char *line_start;
     char *line_end;
-    struct tagLines *line_pred;
-    struct tagLines *line_post;
-} LINES;
+    struct tagNL *line_pred;
+    struct tagNL *line_post;
+} NL;
 
 /* Program state structure to survive recreations */
 typedef struct tagState {
@@ -76,6 +76,12 @@ int setup_panels();
 int free_forms();
 int free_menus();
 int free_windows();
+
+/* Command functions */
+void command_menu_open();
+void command_menu_save();
+void command_dialog_ok();
+void command_dialog_cancel();
 
 
 /* Definition. Variables */
@@ -236,8 +242,9 @@ int main(int argc, char *argv[])
     FILE *file;
     int position = 0, length = 0;
     char *path;
-    /* Variables. Loop control */
+    /* Variables. Loop control, etc */
     int input = 1;
+    char *temp_buffer;
 
     /* Init curses */
     init_curses();
@@ -510,68 +517,14 @@ int main(int argc, char *argv[])
                 input = 0;
                 break;
             case KEY_MAX + 5: // dialog menu -> ok
-                /* Request validation of the main editor field */
-                form_driver(forms[form_dialog], REQ_VALIDATION);
-                path = field_buffer((
-                                        form_fields(forms[form_dialog])
-                                    )[field_input], 0);
-                /* Find first space and temporarily treminate it */
-                for (position = 0; path[position] != ' '; position ++);
-                path[position] = '\0';
-                /* Read from a file */
-                if (menu_state.dialog_do_open) {
-                    file = fopen(path, "r");
-                    if (file) {
-                        fseek(file, 0, SEEK_END);
-                        length = ftell(file);
-                        fseek(file, 0, SEEK_SET);
-                        free (menu_state.edit_buffer);
-                        menu_state.edit_buffer = malloc(length);
-                        if (menu_state.edit_buffer) {
-                            fread(menu_state.edit_buffer, 1, length, file);
-                        }
-                        fclose(file);
-                    }
-                    /* Display read data in editor window (memo form) */
-                    if (menu_state.edit_buffer) {
-                        set_field_buffer((
-                                             form_fields(forms[form_editor])
-                                         )[field_input],
-                                         0, menu_state.edit_buffer);
-                    }
-                } else {
-                    /* Write to a file */
-                    free(menu_state.edit_buffer);
-                    menu_state.edit_buffer =
-                        field_buffer((
-                                         form_fields(forms[form_editor])
-                                     )[field_input], 0);
-                    file = fopen(path, "w+");
-                    if (file) {
-                        fprintf(file, "%s", menu_state.edit_buffer);
-                        fclose(file);
-                    }
-                }
-                /* Restore terminated space in buffer and exit via ESC */
-                path[position] = ' ';
+                /* Call command function */
+                command_dialog_ok();
+                /* Exit via ESC */
                 ungetch(KEY_ESCAPE);
                 break;
             case KEY_MAX + 6: // dialog menu -> cancel
-                /* Request validation of the main editor field */
-                form_driver(forms[form_dialog], REQ_VALIDATION);
-
-                hide_panel(panels[window_dialog]);
-                menu_state.dialog_visible = false;
-
-                /* Remember field buffer */
-                menu_state.path_to_file =
-                    field_buffer((
-                                     form_fields(forms[form_dialog])
-                                 )[field_input], 0);
-                /* Detach field buffer */
-                set_field_buffer((
-                                     form_fields(forms[form_dialog])
-                                 )[field_input], 0, NULL);
+                /* Call command function */
+                command_dialog_cancel();
             default: break;
         }
         /* Always update on changes (TODO: optimize) */
@@ -800,7 +753,9 @@ int setup_forms()
         forms[form_editor] = new_form(create_fields(fields_editor));
         /* Restore editor buffer (if it was previously saved) */
         if (menu_state.edit_buffer != NULL) {
-            set_field_buffer((form_fields(forms[form_editor]))[field_input],
+            set_field_buffer((
+                                 form_fields(forms[form_editor])
+                             )[field_input],
                              0, menu_state.edit_buffer);
         }
     }
@@ -813,7 +768,9 @@ int setup_forms()
         if (menu_state.dialog_visible) {
         /* Dialog title */
             if (menu_state.dialog_do_open) {
-                set_field_buffer((form_fields(forms[form_dialog]))[field_title],
+                set_field_buffer((
+                                     form_fields(forms[form_dialog])
+                                 )[field_title],
                                  0, menu_state.title_open);
             } else {
                 set_field_buffer((form_fields(forms[form_dialog]))[field_title],
@@ -865,19 +822,23 @@ int setup_forms()
 int free_forms()
 {
     int i = 0;
+    char *temp_buffer;
     FIELD *editor = (form_fields(forms[form_editor]))[field_input];
     FIELD *dialog = (form_fields(forms[form_dialog]))[field_input];
 
     /* Save editor buffer prior destruction */
     form_driver(forms[form_editor], REQ_VALIDATION);
-    free(menu_state.edit_buffer);
+    temp_buffer = menu_state.edit_buffer;
     menu_state.edit_buffer = field_buffer(editor, 0);
-    set_field_buffer(editor, 0, NULL);
+    //if (temp_buffer != menu_state.edit_buffer) {
+    //    free(temp_buffer);
+    //}
+    //set_field_buffer(editor, 0, NULL);
 
     /* Save dialog buffer prior destruction */
     form_driver(forms[form_dialog], REQ_VALIDATION);
     menu_state.path_to_file = field_buffer(dialog, 0);
-    set_field_buffer(dialog, 0, NULL);
+    //set_field_buffer(dialog, 0, NULL);
 
     /* Unpost, detach and free menus and items */
     for (i = 0; i < form_count; i ++) {
@@ -1128,5 +1089,87 @@ int free_fields(FIELD **from_fields)
 
     return num_free;
 } /* int free_fields */
+
+void command_menu_open()
+{
+}
+
+void command_menu_save()
+{
+}
+
+void command_dialog_ok()
+{
+    FIELD **temp_fields;
+    char *temp_buffer;
+    FILE *file;
+    char *path;
+    int position = 0;
+    int length = 0;
+
+    /* Request validation of the dialog fields */
+    form_driver(forms[form_dialog], REQ_VALIDATION);
+    temp_fields = form_fields(forms[form_dialog]);
+    path = field_buffer(temp_fields [field_input], 0);
+
+    /* Find first space and temporarily treminate it */
+    for (position = 0; path[position] != ' '; position ++);
+    path[position] = '\0';
+
+    /* Read from a file */
+    if (menu_state.dialog_do_open) {
+        file = fopen(path, "r");
+        if (file) {
+            fseek(file, 0, SEEK_END);
+            length = ftell(file);
+            fseek(file, 0, SEEK_SET);
+            temp_buffer = malloc(length);
+            if (temp_buffer) {
+                fread(temp_buffer, 1, length, file);
+                /* Display read data in editor window */
+                temp_fields = form_fields(forms[form_editor]);
+                set_field_buffer(temp_fields[field_input], 0, temp_buffer);
+            }
+            fclose(file);
+            free(temp_buffer);
+        }
+    } else { /* Write to a file */
+        /* Request the editor fields validation */
+        form_driver(forms[form_editor], REQ_VALIDATION);
+        /* Get a pointer to the edit field buffer */
+        temp_fields = form_fields(forms[form_editor]);
+        temp_buffer = (field_buffer(temp_fields[field_input], 0));
+        file = fopen(path, "w+");
+        if (file) {
+            fprintf(file, "%s", temp_buffer);
+            fclose(file);
+        }
+    }
+    /* Restore terminated space in buffer */
+    path[position] = ' ';
+}
+
+void command_dialog_cancel()
+{
+    FIELD **temp_fields;
+    char *temp_buffer;
+
+    /* Request validation of the main editor field */
+    form_driver(forms[form_dialog], REQ_VALIDATION);
+
+    /* Remember field buffer */
+    temp_buffer = menu_state.path_to_file;
+    temp_fields = form_fields(forms[form_dialog]);
+    menu_state.path_to_file = field_buffer(temp_fields[field_input], 0);
+    if (temp_buffer != menu_state.path_to_file) {
+        free(temp_buffer);
+    }
+    /* Detach field buffer */
+    //set_field_buffer((
+    //                     form_fields(forms[form_dialog])
+    //                 )[field_input], 0, NULL);
+    hide_panel(panels[window_dialog]);
+    menu_state.dialog_visible = false;
+}
 
 /* vim: set et sw=4: */
