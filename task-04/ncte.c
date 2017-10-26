@@ -35,6 +35,14 @@ typedef struct tagFOJA {
     unsigned attrib_pad;
 } FOJA; // 11x4 bytes (44 bytes)
 
+/* Structure to hold new lines for edit buffer (TODO) */
+typedef struct tagLines {
+    char *line_start;
+    char *line_end;
+    struct tagLines *line_pred;
+    struct tagLines *line_post;
+} LINES;
+
 /* Program state structure to survive recreations */
 typedef struct tagState {
     bool dialog_visible;
